@@ -41,6 +41,7 @@ import {
   resolveThreadStatusPill,
   resolveWorkingStartedAt,
   pullRequestMatchesSearchQuery,
+  collectSidebarOpenPullRequests,
   searchSidebarThreads,
   shouldClearThreadSelectionOnMouseDown,
   shouldShowSidebarV2Duration,
@@ -63,7 +64,14 @@ import {
 } from "./Sidebar.logic";
 import { threadSearchMatchKey } from "@t3tools/client-runtime/state/thread-search";
 import { sortSettledThreads } from "@t3tools/client-runtime/state/thread-sort";
-import { EnvironmentId, ProjectId, ProviderInstanceId, RunId, ThreadId } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  ProjectId,
+  ProviderInstanceId,
+  RunId,
+  ThreadId,
+  type ThreadPullRequestLink,
+} from "@t3tools/contracts";
 
 import {
   DEFAULT_INTERACTION_MODE,
@@ -992,6 +1000,63 @@ describe("resolveSidebarThreadStatus", () => {
   it("keeps Waiting static while Working shows elapsed duration", () => {
     expect(shouldShowSidebarV2Duration("waiting")).toBe(false);
     expect(shouldShowSidebarV2Duration("working")).toBe(true);
+  });
+});
+
+describe("collectSidebarOpenPullRequests", () => {
+  const link = (
+    number: number,
+    snapshot: Partial<NonNullable<ThreadPullRequestLink["snapshot"]>> | null,
+    overrides: Partial<ThreadPullRequestLink> = {},
+  ): ThreadPullRequestLink => ({
+    host: "github.com",
+    repository: "pingdotgg/t3code",
+    number,
+    url: `https://github.com/pingdotgg/t3code/pull/${number}`,
+    source: "manual",
+    linkedAt: "2026-10-01T00:00:00.000Z",
+    snapshot:
+      snapshot === null
+        ? null
+        : {
+            state: "open",
+            title: `PR ${number}`,
+            headBranch: `branch-${number}`,
+            baseBranch: "main",
+            isDraft: false,
+            updatedAt: "2026-10-01T00:00:00.000Z",
+            syncedAt: "2026-10-01T00:00:00.000Z",
+            ...snapshot,
+          },
+    stack: null,
+    ...overrides,
+  });
+
+  it("keeps open and unsynced links, newest first, and drops terminal or dismissed ones", () => {
+    const result = collectSidebarOpenPullRequests([
+      {
+        id: "a",
+        pullRequests: [
+          link(1, { updatedAt: "2026-10-02T00:00:00.000Z" }),
+          link(2, { state: "merged" }),
+          link(3, { state: "closed" }),
+          link(4, null, { linkedAt: "2026-10-05T00:00:00.000Z" }),
+          link(5, {}, { source: "stack-dismissed" }),
+        ],
+      },
+    ]);
+    expect(result.map((entry) => entry.link.number)).toEqual([4, 1]);
+  });
+
+  it("lists a pull request linked from several threads once, under the first thread", () => {
+    const result = collectSidebarOpenPullRequests([
+      { id: "first", pullRequests: [link(7, {})] },
+      { id: "second", pullRequests: [link(7, {}, { host: "GitHub.com" }), link(8, {})] },
+    ]);
+    expect(result.map((entry) => [entry.link.number, entry.thread.id])).toEqual([
+      [7, "first"],
+      [8, "second"],
+    ]);
   });
 });
 

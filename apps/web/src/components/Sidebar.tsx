@@ -188,6 +188,7 @@ import {
   threadActionRequiresOperate,
 } from "./threadActionMenu.logic";
 import {
+  collectSidebarOpenPullRequests,
   animateSidebarLayoutChanges,
   applySidebarThreadDrop,
   filterSidebarV2VisibleThreads,
@@ -281,6 +282,7 @@ import {
 } from "./ui/combobox";
 import { SidebarContent, SidebarGroup, useSidebar } from "./ui/sidebar";
 import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrome";
+import { SidebarPullRequestsShelf } from "./sidebar/SidebarPullRequestsShelf";
 import { SidebarHeaderIconButton, SidebarThreadHeader } from "./sidebar/SidebarThreadHeader";
 import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuShortcut, MenuTrigger } from "./ui/menu";
 import { Tooltip, TooltipPopup, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
@@ -307,6 +309,7 @@ const SETTLED_TAIL_PAGE_COUNT = 25;
 const SETTLED_SHELF_EXPANDED_KEY = "t3code:sidebar:settled-expanded";
 const SNOOZED_SHELF_EXPANDED_KEY = "t3code:sidebar:snoozed-expanded";
 const WORKING_SHELF_EXPANDED_KEY = "t3code:sidebar:working-expanded";
+const PULL_REQUESTS_SHELF_EXPANDED_KEY = "t3code:sidebar:pull-requests-expanded";
 
 // Working beta: when this client saw each thread leave the Working shelf.
 // Module scope keeps the inbox order across routes that unmount the sidebar.
@@ -3120,6 +3123,27 @@ export default function Sidebar() {
     return routeThread === undefined ? EMPTY_THREADS : [routeThread];
   }, [routeThreadKey, workingShelfExpanded, workingThreads]);
 
+  // Open pull requests across every unsettled thread; settled work is done with its PRs.
+  const openPullRequests = useMemo(
+    () =>
+      collectSidebarOpenPullRequests([
+        ...pinnedThreads,
+        ...activeThreads,
+        ...workingThreads,
+        ...snoozedThreads,
+      ]),
+    [activeThreads, pinnedThreads, snoozedThreads, workingThreads],
+  );
+  const [pullRequestsShelfExpanded, setPullRequestsShelfExpanded] = useLocalStorage(
+    PULL_REQUESTS_SHELF_EXPANDED_KEY,
+    false,
+    Schema.Boolean,
+  );
+  const togglePullRequestsShelf = useCallback(
+    () => setPullRequestsShelfExpanded((value) => !value),
+    [setPullRequestsShelfExpanded],
+  );
+
   const orderedThreads = useMemo(
     () => [
       ...pinnedThreads,
@@ -5619,6 +5643,14 @@ export default function Sidebar() {
                 </SortableContext>
               </DndContext>
             </TooltipProvider>
+          ) : null}
+          {!isSearchingThreads ? (
+            <SidebarPullRequestsShelf
+              pullRequests={openPullRequests}
+              expanded={pullRequestsShelfExpanded}
+              onToggle={togglePullRequestsShelf}
+              onThreadActivate={navigateToThread}
+            />
           ) : null}
           {!isSearchingThreads &&
           visibleDraftSessionCount === 0 &&

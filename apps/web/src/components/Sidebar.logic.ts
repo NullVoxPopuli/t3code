@@ -1,6 +1,10 @@
 import { resolveThreadWorkingStartedAt } from "@t3tools/client-runtime/state/models";
 import { backgroundWorkHoldsCompletion } from "@t3tools/shared/orchestrationV2PendingBackgroundWork";
-import { threadPullRequestSearchTerms } from "@t3tools/shared/threadPullRequests";
+import {
+  threadPullRequestKeyOf,
+  threadPullRequestSearchTerms,
+  visibleThreadPullRequests,
+} from "@t3tools/shared/threadPullRequests";
 import * as React from "react";
 import {
   isAtomCommandInterrupted,
@@ -8,7 +12,12 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import { defaultAnimateLayoutChanges, type AnimateLayoutChanges } from "@dnd-kit/sortable";
 import { threadSearchMatchKey } from "@t3tools/client-runtime/state/thread-search";
-import type { ContextMenuItem, EnvironmentId, ThreadId } from "@t3tools/contracts";
+import type {
+  ContextMenuItem,
+  EnvironmentId,
+  ThreadId,
+  ThreadPullRequestLink,
+} from "@t3tools/contracts";
 import type { SidebarProjectSortOrder, SidebarThreadSortOrder } from "@t3tools/contracts/settings";
 import type { AsyncResult } from "effect/reactivity";
 import { planPinnedReorder } from "@t3tools/client-runtime/state/thread-sort";
@@ -1123,6 +1132,31 @@ export function pullRequestMatchesSearchQuery(
   if (normalizedQuery.length === 0) return false;
   const haystack = normalizeSearchText(threadPullRequestSearchTerms(pullRequest).join(" "));
   return normalizedQuery.split(" ").every((token) => haystack.includes(token));
+}
+
+/**
+ * The open pull requests linked to `threads`, one entry per pull request, most recently
+ * updated first. A pull request linked from several threads belongs to the first of them,
+ * so pass threads in sidebar order. Unsynced links count as open, as they do on badges.
+ */
+export function collectSidebarOpenPullRequests<
+  TThread extends { readonly pullRequests: ReadonlyArray<ThreadPullRequestLink> },
+>(
+  threads: readonly TThread[],
+): Array<{ readonly key: string; readonly link: ThreadPullRequestLink; readonly thread: TThread }> {
+  const byKey = new Map<string, { key: string; link: ThreadPullRequestLink; thread: TThread }>();
+  for (const thread of threads) {
+    for (const link of visibleThreadPullRequests(thread.pullRequests)) {
+      if (link.snapshot !== null && link.snapshot.state !== "open") continue;
+      const key = threadPullRequestKeyOf(link);
+      if (!byKey.has(key)) byKey.set(key, { key, link, thread });
+    }
+  }
+  const updatedAtMs = (link: ThreadPullRequestLink) =>
+    firstValidTimestampMs(link.snapshot?.updatedAt ?? null, link.linkedAt);
+  return [...byKey.values()].toSorted(
+    (left, right) => updatedAtMs(right.link) - updatedAtMs(left.link),
+  );
 }
 
 export function filterSidebarProjectScopeItems<TItem extends { readonly value: string }>(input: {
